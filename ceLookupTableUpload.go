@@ -153,15 +153,15 @@ func (e *parseError) Error() string {
 	return fmt.Sprintf(e.prob)
 }
 
-func handleSheet(s *sheets.Sheet) (*CostElement, error) {
+func handleSheet(s *sheets.Sheet) (*CostElement, []error) {
 	rows := s.Data[0].RowData
 
 	if rows[2].Values[1].FormattedValue != "opengov.com" {
-		return nil, &parseError{
+		return nil, []error{&parseError{
 			fmt.Sprintf("env '%s' not a candidate for cost element",
-				rows[3].Values[1].FormattedValue)}
+				rows[3].Values[1].FormattedValue)}}
 	}
-	fmt.Printf("Building Cost Element : %s\n", rows[3].Values[1].FormattedValue)
+	// log.Printf("Building Cost Element : %s\n", rows[3].Values[1].FormattedValue)
 	// build a Configuration
 	conf := getConfig(rows)
 	sourceDetails := CostElementSource("TABLE")
@@ -178,8 +178,9 @@ func handleSheet(s *sheets.Sheet) (*CostElement, error) {
 	return validateCostElement(&ce)
 }
 
-func validateCostElement(ce *CostElement) (*CostElement, error) {
-	schemaLoader := gojsonschema.NewReferenceLoader("file://./cost-element.json")
+var schemaLoader = gojsonschema.NewReferenceLoader("file://./cost-element.json")
+
+func validateCostElement(ce *CostElement) (*CostElement, []error) {
 	json, _ := json.MarshalIndent(&ce, "", "\t")
 	documentLoader := gojsonschema.NewStringLoader(string(json))
 	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
@@ -187,16 +188,13 @@ func validateCostElement(ce *CostElement) (*CostElement, error) {
 		panic(err.Error())
 	}
 
-	if result.Valid() {
-		fmt.Printf("The document is valid\n")
-	} else {
-		fmt.Printf("The document is not valid. see errors :\n")
-		for _, desc := range result.Errors() {
-			fmt.Printf("- %s\n", desc)
-		}
+	var errors []error
+	for _, err := range result.Errors() {
+		errors = append(errors, error(&parseError{err.String()}))
 	}
-	return ce, nil
+	return ce, errors
 }
+
 func main() {
 	b, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
@@ -224,9 +222,17 @@ func main() {
 	}
 
 	for idx, sheet := range resp.Sheets {
-		fmt.Printf("%d : %s, %s\n", idx, sheet.Properties.Title, sheet.Properties.SheetType)
 		if sheet.Data != nil {
-			handleSheet(sheet)
+			fmt.Printf("%d : %s, %s", idx, sheet.Properties.Title, sheet.Properties.SheetType)
+			ce, errors := handleSheet(sheet)
+			if errors == nil {
+				fmt.Printf(" %s valid", ce.Configuration.Name)
+			} else {
+				for _, err := range errors {
+					fmt.Printf("\n\t %v", err)
+				}
+			}
+			fmt.Printf("\n")
 		}
 	}
 }
