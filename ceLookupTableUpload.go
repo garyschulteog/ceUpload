@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	// "github.com/xeipuuv/gojsonschema"
+	"github.com/xeipuuv/gojsonschema"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -132,7 +132,7 @@ func getConfig(rows []*sheets.RowData) CostElementConfiguration {
 
 func parseTime(s string) *InclusiveDate {
 
-	t, err := time.Parse("01/02/2006", s)
+	t, err := time.Parse("2006/02/01", s)
 	if err == nil {
 		s := InclusiveDate(t.Format("2006-01-02T15:04:05-0700"))
 		return &s
@@ -166,35 +166,35 @@ func handleSheet(s *sheets.Sheet) (*CostElement, error) {
 	conf := getConfig(rows)
 	sourceDetails := CostElementSource("TABLE")
 	valueTypeDetails := CostElementValueType(strings.ToUpper(rows[9].Values[1].FormattedValue))
-	createdAt := CreatedAt(time.Now().Format("2006-01-02T15:04:05-0700"))
+	createdAt := CreatedAt(time.Now().Format(time.RFC3339))
 	ce := CostElement{
 		Configuration: conf,
 		CreatedAt:     &createdAt,
 		Source:        sourceDetails,
 		Template:      CostElementTemplate("NONE"),
 		ValueType:     valueTypeDetails}
-	shit, _ := json.MarshalIndent(ce, "", "\t")
-	fmt.Printf(string(shit))
+	// shit, _ := json.MarshalIndent(ce, "", "\t")
+	// fmt.Printf(string(shit))
 	return validateCostElement(&ce)
 }
 
 func validateCostElement(ce *CostElement) (*CostElement, error) {
-	// schemaLoader := gojsonschema.NewReferenceLoader("file://./cost-element.json")
-	// json, _ := json.MarshalIndent(&ce, "", "\t")
-	// documentLoader := gojsonschema.NewStringLoader(string(json))
-	// result, err := gojsonschema.Validate(schemaLoader, documentLoader)
-	// if err != nil {
-	// 	panic(err.Error())
-	// }
+	schemaLoader := gojsonschema.NewReferenceLoader("file://./cost-element.json")
+	json, _ := json.MarshalIndent(&ce, "", "\t")
+	documentLoader := gojsonschema.NewStringLoader(string(json))
+	result, err := gojsonschema.Validate(schemaLoader, documentLoader)
+	if err != nil {
+		panic(err.Error())
+	}
 
-	// if result.Valid() {
-	// 	fmt.Printf("The document is valid\n")
-	// } else {
-	// 	fmt.Printf("The document is not valid. see errors :\n")
-	// 	for _, desc := range result.Errors() {
-	// 		fmt.Printf("- %s\n", desc)
-	// 	}
-	// }
+	if result.Valid() {
+		fmt.Printf("The document is valid\n")
+	} else {
+		fmt.Printf("The document is not valid. see errors :\n")
+		for _, desc := range result.Errors() {
+			fmt.Printf("- %s\n", desc)
+		}
+	}
 	return ce, nil
 }
 func main() {
