@@ -104,7 +104,7 @@ func getLookupTable(rows []*sheets.RowData) TableSource {
 	return ret
 }
 
-func getConfig(rows []*sheets.RowData) CostElementConfiguration {
+func deriveConfig(rows []*sheets.RowData) CostElementConfiguration {
 	conf := CostElementConfiguration{}
 	conf.Name = rows[3].Values[1].FormattedValue
 	conf.Description = rows[4].Values[1].FormattedValue
@@ -163,7 +163,7 @@ func handleSheet(s *sheets.Sheet) (*CostElement, []error) {
 	}
 	// log.Printf("Building Cost Element : %s\n", rows[3].Values[1].FormattedValue)
 	// build a Configuration
-	conf := getConfig(rows)
+	conf := deriveConfig(rows)
 	sourceDetails := CostElementSource("TABLE")
 	valueTypeDetails := CostElementValueType(strings.ToUpper(rows[9].Values[1].FormattedValue))
 	createdAt := CreatedAt(time.Now().Format(time.RFC3339))
@@ -195,6 +195,34 @@ func validateCostElement(ce *CostElement) (*CostElement, []error) {
 	return ce, errors
 }
 
+func loadFromSheets(client *http.Client, spreadsheetId string) {
+	srv, err := sheets.New(client)
+	if err != nil {
+		log.Fatalf("Unable to retrieve Sheets client: %v", err)
+	}
+
+	resp, err := srv.Spreadsheets.Get(spreadsheetId).IncludeGridData(true).Do()
+		if err != nil {
+			log.Fatalf("Unable to retrieve data from sheet: %v", err)
+		}
+	
+		for idx, sheet := range resp.Sheets {
+			if sheet.Data != nil {
+				fmt.Printf("%d : %s, %s", idx, sheet.Properties.Title, sheet.Properties.SheetType)
+				ce, errors := handleSheet(sheet)
+				if errors == nil {
+					fmt.Printf(" %s valid", ce.Configuration.Name)
+				} else {
+					for _, err := range errors {
+						fmt.Printf("\n\t %v", err)
+					}
+				}
+				fmt.Printf("\n")
+			}
+		}
+	
+}
+
 func main() {
 	b, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
@@ -208,31 +236,8 @@ func main() {
 	}
 	client := getClient(config)
 
-	srv, err := sheets.New(client)
-	if err != nil {
-		log.Fatalf("Unable to retrieve Sheets client: %v", err)
-	}
-
 	// https://docs.google.com/spreadsheets/d/1Fcct8CdKHHqk_Ux53ddoA47aVQBxR9jYkzSGu8risLk/edit?ts=5d49dad4#gid=122535301
+	loadFromSheets(client, "1Fcct8CdKHHqk_Ux53ddoA47aVQBxR9jYkzSGu8risLk")
 
-	spreadsheetId := "1Fcct8CdKHHqk_Ux53ddoA47aVQBxR9jYkzSGu8risLk"
-	resp, err := srv.Spreadsheets.Get(spreadsheetId).IncludeGridData(true).Do()
-	if err != nil {
-		log.Fatalf("Unable to retrieve data from sheet: %v", err)
-	}
 
-	for idx, sheet := range resp.Sheets {
-		if sheet.Data != nil {
-			fmt.Printf("%d : %s, %s", idx, sheet.Properties.Title, sheet.Properties.SheetType)
-			ce, errors := handleSheet(sheet)
-			if errors == nil {
-				fmt.Printf(" %s valid", ce.Configuration.Name)
-			} else {
-				for _, err := range errors {
-					fmt.Printf("\n\t %v", err)
-				}
-			}
-			fmt.Printf("\n")
-		}
-	}
 }
