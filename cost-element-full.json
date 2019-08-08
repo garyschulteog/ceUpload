@@ -1,0 +1,479 @@
+{
+  "$id": "http://example.com/cost-element.json",
+  "type": "object",
+  "$schema": "http://json-schema.org/draft-06/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "delegatingId" : {
+      "description": "String union type supporting both mongoObjectId and uuid types",
+      "type": "string",
+      "pattern": "^([0-9a-f]{24}$)|([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$)",
+      "examples": [
+        "158D7E0A-8CD7-427C-B972-00E7FEFBA4CB",
+        "5cc08be9a356b80001d036a0"
+      ]
+    },
+    "uuid": {
+      "description": "(INDEXED)",
+      "type": "string",
+      "examples": [
+        "158D7E0A-8CD7-427C-B972-00E7FEFBA4CB"
+      ]
+    },
+    "mongoObjectId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{24}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "customDateTimePattern" : "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+      "description": "ISO 8601 compliant in UTC.",
+      "examples": [
+        "2017-04-03T00:00:00Z"
+      ]
+    },
+    "deletedAt": {
+      "type": "string",
+      "format": "date-time",
+      "customDateTimePattern" : "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+      "description": "ISO 8601 compliant in UTC.",
+      "examples": [
+        "2017-04-03T00:00:00Z"
+      ]
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+(.[0-9]+){0,2}(-[0-9a-z]+(.[0-9a-z]+)*)?$",
+      "description": "semver",
+      "examples": [
+        "12.8.1-beta"
+      ]
+    },
+    "inclusiveDate": {
+      "description": "(INDEXED)  is INCLUSIVE. ISO 8601 compliant always midnight UTC, never localized in UI.",
+      "type": "string",
+      "format": "date",
+      "examples": [
+        "2017-04-03T00:00:00Z"
+      ]
+    },
+    "percentage": {
+      "type": "number",
+      "existingJavaType" : "java.math.BigDecimal",
+      "default": "1",
+      "examples": [
+        0.6000000238418579
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "coaSegment": {
+      "type": "object",
+      "required": [
+        "segmentName",
+        "segmentCode"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "segmentName": {
+          "type": "string",
+          "examples": [
+            "Fund Code"
+          ]
+        },
+        "segmentCode": {
+          "type": "string",
+          "examples": [
+            "101"
+          ]
+        }
+      }
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cqrsMetadata": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "changesApplied": {
+          "type": "integer"
+        },
+        "initialVersion": {
+          "type": "string"
+        },
+        "workforceVersion": {
+          "type": "string"
+        },
+        "updatedBy" : {
+          "type" : "string"
+        },
+        "updatedAt" : {
+          "type": "string",
+          "format": "date-time",
+          "customDateTimePattern" : "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+        }
+      },
+      "required": [
+        "version",
+        "changesApplied",
+        "initialVersion"
+      ]
+    },
+    "amountValueType": {
+      "type": "object",
+      "required": [
+        "frequency"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "frequency": {
+          "type": "string",
+          "enum": [
+            "YEARLY",
+            "MONTHLY",
+            "BIANNUALLY",
+            "HOURLY",
+            "QUARTERLY"
+          ],
+          "description": "The frequency that this cost element is supplied. If a cost element is valid during one of these periods, then it is NOT prorated. The full value for the CE is applied even if it is only valid for a fraction of the period"
+        }
+      }
+    },
+    "emptyObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+      }
+    },
+    "rateValueType": {
+      "type": "object",
+      "required": [
+        "calculationBasis"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "minAmount": {
+          "type": "number",
+          "description": "minimum amount of rate value * calculationBasis value",
+          "existingJavaType" : "java.math.BigDecimal"
+        },
+        "maxAmount": {
+          "type": "number",
+          "description": "maximum amount of rate value * calculationBasis value",
+          "existingJavaType" : "java.math.BigDecimal"
+        },
+        "calculationBasis": {
+          "type": "object",
+          "required": [
+            "sourceType",
+            "sourceIdentifier"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "sourceType": {
+              "type": "string",
+              "enum": [
+                "CATEGORY",
+                "IMPORT",
+                "COST_ELEMENT"
+              ],
+              "description": "Where the calculation"
+            },
+            "sourceIdentifier": {
+              "type": "string",
+              "description": "for CATEGORY, this is the category name, for POSITIONS_DATASET_COLUMN, this is the column name, and for COST_ELEMENT, this is the CE id",
+              "minLength": 1
+            }
+          },
+          "description": "The thing that the cost of this cost element is based off of. ie if your health insurance is 10% of your income, then your income would be your calculation basis"
+        }
+      }
+    },
+    "fixedSource": {
+      "type": "object",
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": ["string", "number"],
+          "existingJavaType": "java.math.BigDecimal",
+          "description": "the fixed value of this cost element"
+        }
+      }
+    },
+    "importSource": {
+      "type": "object",
+      "required": [
+        "columnName"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "columnName": {
+          "type": "string",
+          "description": "the column of the import positions dataset to pull cost element value from",
+          "minLength": 1
+        }
+      }
+    },
+    "tableSource": {
+      "type": "object",
+      "required": [
+        "lookupTables"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "lookupTables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rows",
+              "columns"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "_id": {
+                "description": "(INDEXED)",
+                "type": "string",
+                "examples": [
+                  "158D7E0A-8CD7-427C-B972-00E7FEFBA4CB"
+                ]
+              },
+              "description": {
+                "type": "string"
+              },
+              "columns": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "rows": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "keys",
+                    "value",
+                    "label"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "minItems": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "existingJavaType" : "java.math.BigDecimal"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "_id": {
+      "$ref": "#/definitions/delegatingId"
+    },
+    "schemaVersion": {
+      "$ref": "#/definitions/schemaVersion"
+    },
+    "createdAt": {
+      "$ref": "#/definitions/createdAt"
+    },
+    "deletedAt": {
+      "$ref": "#/definitions/deletedAt"
+    },
+    "cqrsMetadata": {
+      "$ref": "#/definitions/cqrsMetadata"
+    },
+    "source": {
+      "$id": "/properties/source",
+      "type": "string",
+      "enum": [
+        "FIXED",
+        "TABLE",
+        "IMPORT",
+        "WAGE"
+      ],
+      "description": "Where the cost element value comes from. FIXED means CE will always yield the same rate/amount. TABLE means the rate/amount of this CE comes from a look up table. IMPORT means that this amount of this CE comes from a positions dataset column."
+    },
+    "valueType": {
+      "$id": "/properties/valueType",
+      "type": "string",
+      "enum": [
+        "RATE",
+        "AMOUNT"
+      ],
+      "description": "If the CE is a RATE a value of 0.03 would mean 3% or if it is an AMOUNT 123.45 would mean $123.45"
+    },
+    "template": {
+      "$id": "/properties/template",
+      "type": "string",
+      "enum": [
+        "HOURLY_WAGE",
+        "OVERTIME",
+        "COLA",
+        "MERIT_INCREASE",
+        "BONUS",
+        "HEALTH",
+        "HOLIDAY_BONUS",
+        "FICA",
+        "MCARE",
+        "PENSION",
+        "BARGAINING_UNITS",
+        "EQUIPMENT",
+        "NONE"
+      ],
+      "description": "the template that this cost element is based off of"
+    },
+    "configuration": {
+      "$id": "/properties/configuration",
+      "type": "object",
+      "properties": {
+        "name": {
+          "$id": "/properties/configuration/name",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "the name of this cost element"
+        },
+        "description": {
+          "$id": "/properties/configuration/description",
+          "type": "string",
+          "maxLength": 2048,
+          "minLength": 1,
+          "description": "the description of this cost element"
+        },
+        "category": {
+          "$id": "/properties/configuration/category",
+          "type": "string",
+          "enum": [
+            "BASE_WAGE",
+            "VARIABLE_WAGE",
+            "TAX",
+            "INSURANCE",
+            "RETIREMENT",
+            "AFFILIATION",
+            "ALLOWANCE",
+            "WAGE_ADJUSTMENT",
+            "TOTAL_WAGES",
+            "STIPEND",
+            "OTHER"
+          ],
+          "description": "the category of this cost element"
+        },
+        "effectiveStartDate": {
+          "$id": "/properties/configuration/effectiveStartDate",
+          "$ref": "#/definitions/inclusiveDate"
+        },
+        "effectiveStartDateSource": {
+          "type": "string",
+          "enum": [
+            "CUSTOM",
+            "FISCAL_YEAR_START",
+            "POSITION_START",
+            "HIRE_DATE"
+          ],
+          "default": "CUSTOM"
+        },
+        "effectiveEndDate": {
+          "$id": "/properties/configuration/effectiveEndDate",
+          "$ref": "#/definitions/inclusiveDate"
+        },
+        "objectCode": {
+          "$id": "/properties/configuration/objectCode",
+          "type": "string",
+          "description": "the last segment of the account string that corresponds to this cost element",
+          "examples": [
+            "4000",
+            "A50"
+          ],
+          "minLength": 1
+        },
+        "treeId": {
+          "$id": "/properties/coa/items/properties/treeId",
+          "type": "string",
+          "description": "platform CoA tree id for the object code",
+          "examples": [
+            "1d55bace-47ee-4c97-887b-8efe1dcc08e6"
+          ]
+        },
+        "sourceDetails": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/fixedSource"
+            },
+            {
+              "$ref": "#/definitions/importSource"
+            },
+            {
+              "$ref": "#/definitions/tableSource"
+            },
+            {
+              "$ref": "#/definitions/emptyObject"
+            }
+          ]
+        },
+        "valueTypeDetails": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/amountValueType"
+            },
+            {
+              "$ref": "#/definitions/rateValueType"
+            },
+            {
+              "$ref": "#/definitions/emptyObject"
+            }
+          ]
+        },
+        "defaultValue": {
+          "type": "number",
+          "existingJavaType" : "java.math.BigDecimal",
+          "examples": [
+            6.0
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "category",
+        "effectiveStartDateSource",
+        "objectCode",
+        "sourceDetails",
+        "valueTypeDetails"
+      ]
+    }
+  },
+  "required": [
+    "source",
+    "valueType",
+    "template",
+    "configuration"
+  ]
+}
