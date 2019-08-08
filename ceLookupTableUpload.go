@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -18,6 +20,17 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
+type parseError struct {
+	prob string
+}
+
+type keycloakCreds struct {
+	ClientId     string `json:"clientId"`
+	ClientSecret string `json:"clientSecret"`
+	User         string `json:"user"`
+	Password     string `json:"password"`
+}
+
 // Retrieve a token, saves the token, then returns the generated client.
 func getClient(config *oauth2.Config) *http.Client {
 	// The file token.json stores the user's access and refresh tokens, and is
@@ -30,6 +43,35 @@ func getClient(config *oauth2.Config) *http.Client {
 		saveToken(tokFile, tok)
 	}
 	return config.Client(context.Background(), tok)
+}
+
+var keycloak string = "https://auth.production.opengov.zone/auth/realms/opengov/protocol/openid-connect/token"
+
+func getKeycloakToken(creds keycloakCreds) (oauth2.Token, error) {
+	var err error
+	tokenResp := oauth2.Token{}
+	//hacky.
+	cli := http.Client{
+		Timeout: time.Second * 2, // Maximum of 2 secs
+	}
+	body := []byte(fmt.Sprintf("grant_type=password&username=%s&password=%s", creds.User, creds.Password))
+	req, err := http.NewRequest(http.MethodPost, keycloak, bytes.NewBuffer(body))
+	if err == nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Authorization", fmt.Sprintf("Basic %s",
+			base64.RawStdEncoding.EncodeToString([]byte(
+				fmt.Sprintf("%s:%s", creds.ClientId, creds.ClientSecret)))))
+		resp, reqerr := cli.Do(req)
+		if resp.StatusCode > 200 {
+			err = error(&parseError{"Failed to authorize: " + resp.Status})
+		} else {
+			err = reqerr
+		}
+		if err == nil {
+			err = json.NewDecoder(resp.Body).Decode(&tokenResp)
+		}
+	}
+	return tokenResp, err
 }
 
 // Request a token from the web, then returns the retrieved token.
@@ -145,10 +187,6 @@ func parseDouble(s string) *float64 {
 	return &z
 }
 
-type parseError struct {
-	prob string
-}
-
 func (e *parseError) Error() string {
 	return fmt.Sprintf(e.prob)
 }
@@ -195,32 +233,42 @@ func validateCostElement(ce *CostElement) (*CostElement, []error) {
 	return ce, errors
 }
 
-func loadFromSheets(client *http.Client, spreadsheetId string) {
+func loadFromSheets(client *http.Client, spreadsheetId string) []CostElement {
+	var ceSlice []CostElement
 	srv, err := sheets.New(client)
 	if err != nil {
 		log.Fatalf("Unable to retrieve Sheets client: %v", err)
 	}
 
 	resp, err := srv.Spreadsheets.Get(spreadsheetId).IncludeGridData(true).Do()
-		if err != nil {
-			log.Fatalf("Unable to retrieve data from sheet: %v", err)
-		}
-	
-		for idx, sheet := range resp.Sheets {
-			if sheet.Data != nil {
-				fmt.Printf("%d : %s, %s", idx, sheet.Properties.Title, sheet.Properties.SheetType)
-				ce, errors := handleSheet(sheet)
-				if errors == nil {
-					fmt.Printf(" %s valid", ce.Configuration.Name)
-				} else {
-					for _, err := range errors {
-						fmt.Printf("\n\t %v", err)
-					}
+	if err != nil {
+		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+	}
+
+	for idx, sheet := range resp.Sheets {
+		if sheet.Data != nil {
+			fmt.Printf("%d : %s, %s", idx, sheet.Properties.Title, sheet.Properties.SheetType)
+			ce, errors := handleSheet(sheet)
+			if errors == nil {
+				fmt.Printf(" %s valid", ce.Configuration.Name)
+			} else {
+				for _, err := range errors {
+					fmt.Printf("\n\t %v", err)
 				}
-				fmt.Printf("\n")
 			}
+			fmt.Printf("\n")
 		}
-	
+	}
+	return ceSlice
+}
+
+func loadKeycloakCreds() (keycloakCreds, error) {
+	var kc keycloakCreds
+	b, err := ioutil.ReadFile("keycloakCreds.json")
+	if err == nil {
+		err = json.Unmarshal(b, &kc)
+	}
+	return kc, err
 }
 
 func main() {
@@ -239,5 +287,16 @@ func main() {
 	// https://docs.google.com/spreadsheets/d/1Fcct8CdKHHqk_Ux53ddoA47aVQBxR9jYkzSGu8risLk/edit?ts=5d49dad4#gid=122535301
 	loadFromSheets(client, "1Fcct8CdKHHqk_Ux53ddoA47aVQBxR9jYkzSGu8risLk")
 
+	kcCreds, err := loadKeycloakCreds()
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Printf("%s : %s\n", kcCreds.User, kcCreds.Password)
+	tk, err := getKeycloakToken(kcCreds)
+	if err != nil {
+		panic(err.Error())
+	}
+	tkstr, _ := json.MarshalIndent(tk, "", "\t")
+	fmt.Printf(string(tkstr))
 
 }

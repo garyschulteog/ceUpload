@@ -1,0 +1,6 @@
+{
+  "clientId": "budget-service",
+  "clientSecret": "example-client-secret-value",
+  "user": "workforce-service-user",
+  "password": "example-worforce-user-password"
+}
