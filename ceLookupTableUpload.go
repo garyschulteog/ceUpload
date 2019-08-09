@@ -48,9 +48,9 @@ func (e *parseError) Error() string {
 	return fmt.Sprintf(e.prob)
 }
 
-//todo: config these from params and do checking at creation time
-var keycloak string = "https://auth.integration.opengov.zone/auth/realms/opengov/protocol/openid-connect/token"
-var ceEndpoint string = "https://controlpanel.%s/api/wf_dataset_service/v1/cost_elements"
+var targetEnv string
+var keycloak string = "https://auth.%s.opengov.zone/auth/realms/opengov/protocol/openid-connect/token"
+var ceEndpoint string = "%s/api/wf_dataset_service/v1/cost_elements"
 var schemaLoader = gojsonschema.NewReferenceLoader("file://./cost-element.json")
 
 // Retrieve a token, saves the token, then returns the generated client.
@@ -225,10 +225,10 @@ func handleSheet(s *sheets.Sheet) CostElementResult {
 	ceResult.workforceId = rows[1].Values[1].FormattedValue
 
 	ceResult.env = rows[2].Values[1].FormattedValue
-	if ceResult.env != "opengov.com" && ceResult.env != "ogintegration.us" {
+	if ceResult.env != targetEnv {
 		ceResult.errors = []error{&parseError{
-			fmt.Sprintf("env '%s' not a candidate for cost element",
-				rows[2].Values[1].FormattedValue)}}
+			fmt.Sprintf("'%s' does not match target env '%s'",
+				rows[2].Values[1].FormattedValue, targetEnv)}}
 		return ceResult
 	}
 	// log.Printf("Building Cost Element : %s\n", rows[3].Values[1].FormattedValue)
@@ -300,11 +300,7 @@ func sendCostElement(ceResult CostElementResult, token oauth2.Token) CostElement
 		Timeout: time.Second * 5, // Maximum of 5 secs
 	}
 	body, _ := json.Marshal(ceResult.costElement)
-	req, err := http.NewRequest(
-		http.MethodPost,
-		// fmt.Sprintf(ceEndpoint, ceResult.env),
-		"http://localhost:9301/api/wf_dataset_service/v1/cost_elements",
-		bytes.NewBuffer(body))
+	req, err := http.NewRequest(http.MethodPost, ceEndpoint, bytes.NewBuffer(body))
 
 	if err == nil {
 		q := req.URL.Query()
@@ -315,11 +311,13 @@ func sendCostElement(ceResult CostElementResult, token oauth2.Token) CostElement
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
 		resp, reqerr := cli.Do(req)
-		if resp.StatusCode > 200 {
-			err = error(
-				&parseError{
-					fmt.Sprintf("Failed to create cost element for: %s\n\tcause: %s",
-						ceResult.sheetName, resp.Status)})
+		if reqerr == nil {
+			if resp.StatusCode > 200 {
+				err = error(
+					&parseError{
+						fmt.Sprintf("Failed to create cost element for: %s\n  cause: %s",
+							ceResult.sheetName, resp.Status)})
+			}
 		} else {
 			err = reqerr
 		}
@@ -338,7 +336,12 @@ func sendCostElements(ceResults []CostElementResult, token oauth2.Token) []CostE
 	var ceResps []CostElementResponse
 
 	for _, ceResult := range ceResults {
-		ceResps = append(ceResps, sendCostElement(ceResult, token))
+		if ceResult.errors == nil {
+			ceResps = append(ceResps, sendCostElement(ceResult, token))
+		} else {
+			ceResps = append(ceResps, CostElementResponse{
+				fmt.Sprintf("skipped %s", ceResult.sheetName), ceResult.errors[0]})
+		}
 	}
 	return ceResps
 }
@@ -373,10 +376,35 @@ func dumpCeResponses(ceResponses []CostElementResponse) {
 	}
 }
 
+func setEnv() {
+	// do some sloppy env configurations
+	var tgt string
+	fmt.Printf("enter target environment (prod/INTEG)\n->  ")
+	fmt.Scan(&tgt)
+	switch strings.ToUpper(tgt) {
+	case "PROD":
+		targetEnv = "opengov.com"
+		ceEndpoint = fmt.Sprintf(ceEndpoint, "https://controlpanel.opengov.com")
+		keycloak = fmt.Sprintf(keycloak, "production")
+	case "INTEG":
+		targetEnv = "ogintegration.us"
+		ceEndpoint = fmt.Sprintf(ceEndpoint, "https://controlpanel.ogintegration.us")
+		keycloak = fmt.Sprintf(keycloak, "integration")
+	default:
+		fmt.Printf("using dev ogov.me\n\n")
+		targetEnv = "ogov.me"
+		ceEndpoint = fmt.Sprintf(ceEndpoint, "http://controlpanel.ogov.me")
+		keycloak = fmt.Sprintf(keycloak, "integration")
+	}
+}
+
 func main() {
-	client := getClient()
 	var sheetId string
 	var proceed string
+
+	client := getClient()
+	setEnv()
+
 	fmt.Printf("enter the google sheet id you want to load, e.g. `13bAh82ug0zGIBkKJKlxIEa2SHFVceWvxVpuzF4Svfqk` in the example url below:\n")
 	fmt.Printf("https://docs.google.com/spreadsheets/d/13bAh82ug0zGIBkKJKlxIEa2SHFVceWvxVpuzF4Svfqk/edit#gid=0\n")
 	fmt.Printf("\n->  ")
