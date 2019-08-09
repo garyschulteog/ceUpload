@@ -180,21 +180,21 @@ func buildConfig(rows []*sheets.RowData) CostElementConfiguration {
 	conf := CostElementConfiguration{}
 	conf.Name = rows[3].Values[1].FormattedValue
 	conf.Description = rows[4].Values[1].FormattedValue
-	conf.Category = CostElementConfigurationCategory(strings.ToUpper(rows[5].Values[1].FormattedValue))
+	conf.Category = CostElementConfigurationCategory(parseCellString(rows[5].Values[1]))
 	// just use fiscal year start date source, keep it simple:
 	// conf.EffectiveStartDate = parseTime(rows[6].Values[1].FormattedValue)
 	// conf.EffectiveEndDate = parseTime(rows[7].Values[1].FormattedValue)
 	conf.EffectiveStartDateSource = CostElementConfigurationEffectiveStartDateSourceFISCALYEARSTART
 	conf.ObjectCode = rows[8].Values[1].FormattedValue
 	conf.DefaultValue = parseDouble(rows[14].Values[1].FormattedValue)
-	switch rows[9].Values[1].FormattedValue {
-	case "amount":
+	switch parseCellString(rows[9].Values[1]) {
+	case "AMOUNT":
 		conf.ValueTypeDetails = AmountValueType{AmountValueTypeFrequency(
-			strings.ToUpper(rows[10].Values[1].FormattedValue))}
-	case "rate":
+			parseCellString(rows[10].Values[1]))}
+	case "RATE":
 		conf.ValueTypeDetails = RateValueType{
 			RateValueTypeCalculationBasis{
-				strings.ToUpper(rows[13].Values[1].FormattedValue),
+				parseCellString(rows[13].Values[1]),
 				RateValueTypeCalculationBasisSourceType("CATEGORY")},
 			parseDouble(rows[12].Values[1].FormattedValue),
 			parseDouble(rows[11].Values[1].FormattedValue)}
@@ -218,6 +218,10 @@ func parseDouble(s string) *float64 {
 	return &z
 }
 
+func parseCellString(cell *sheets.CellData) string {
+	return strings.Trim(strings.ToUpper(cell.FormattedValue), " ")
+}
+
 func handleSheet(s *sheets.Sheet) CostElementResult {
 	ceResult := CostElementResult{}
 	ceResult.sheetName = s.Properties.Title
@@ -235,7 +239,7 @@ func handleSheet(s *sheets.Sheet) CostElementResult {
 	// build a Configuration
 	conf := buildConfig(rows)
 	sourceDetails := CostElementSource("TABLE")
-	valueTypeDetails := CostElementValueType(strings.ToUpper(rows[9].Values[1].FormattedValue))
+	valueTypeDetails := CostElementValueType(parseCellString(rows[9].Values[1]))
 	createdAt := CreatedAt(time.Now().Format(time.RFC3339))
 	ceResult.costElement = CostElement{
 		Configuration: conf,
@@ -243,8 +247,6 @@ func handleSheet(s *sheets.Sheet) CostElementResult {
 		Source:        sourceDetails,
 		Template:      CostElementTemplate("NONE"),
 		ValueType:     valueTypeDetails}
-	// tmp, _ := json.MarshalIndent(ce, "", "\t")
-	// fmt.Printf(string(tmp))
 	validateCostElementResult(&ceResult)
 	return ceResult
 }
@@ -260,6 +262,7 @@ func validateCostElementResult(ceResult *CostElementResult) {
 	var errors []error
 	for _, err := range result.Errors() {
 		errors = append(errors, error(&parseError{err.String()}))
+		fmt.Printf(string(json))
 	}
 	ceResult.errors = errors
 }
@@ -401,6 +404,7 @@ func setEnv() {
 func main() {
 	var sheetId string
 	var proceed string
+	var ceResults []CostElementResult
 
 	client := getClient()
 	setEnv()
@@ -411,13 +415,16 @@ func main() {
 	fmt.Scan(&sheetId)
 	fmt.Println()
 
-	ceResults := loadFromSheets(client, sheetId)
-	dumpCeResults(ceResults)
-	fmt.Println("\n upload the valid cost elements? (y/N)")
-	fmt.Scan(&proceed)
-	fmt.Println()
+	for proceed = "RELOAD"; proceed == "RELOAD" || proceed == "R"; {
+		ceResults = loadFromSheets(client, sheetId)
+		dumpCeResults(ceResults)
+		fmt.Println("\n upload the valid cost elements? (Yes/Reload/No)")
+		fmt.Scan(&proceed)
+		proceed = strings.ToUpper(proceed)
+		fmt.Println()
+	}
 
-	if proceed == "y" {
+	if proceed == "YES" || proceed == "Y" {
 		kcCreds, err := loadKeycloakCreds()
 		if err != nil {
 			panic(err.Error())
