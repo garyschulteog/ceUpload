@@ -44,6 +44,11 @@ type CostElementResponse struct {
 	err  error
 }
 
+func (e *parseError) Error() string {
+	return fmt.Sprintf(e.prob)
+}
+
+//todo: config these from params and do checking at creation time
 var keycloak string = "https://auth.integration.opengov.zone/auth/realms/opengov/protocol/openid-connect/token"
 var ceEndpoint string = "https://controlpanel.%s/api/wf_dataset_service/v1/cost_elements"
 var schemaLoader = gojsonschema.NewReferenceLoader("file://./cost-element.json")
@@ -142,15 +147,13 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
-func getLookupTable(rows []*sheets.RowData) TableSource {
+func buildLookupTable(rows []*sheets.RowData) TableSource {
 	l := TableSourceLookupTablesElem{}
-	var rowlen int
+	rowLastIdx := len(rows[16].Values) - 1
 
-	// lookup table column headers should be on row 17:
-	for i, col := range rows[16].Values {
+	// lookup table column headers should be on row 17, (skip amount and label):
+	for _, col := range rows[16].Values[:rowLastIdx-1] {
 		l.Columns = append(l.Columns, col.FormattedValue)
-		// save our lookup table row len (0 basd)
-		rowlen = i
 	}
 	// lookup table elements should start on row 18:
 	for _, row := range rows[17:] {
@@ -160,12 +163,12 @@ func getLookupTable(rows []*sheets.RowData) TableSource {
 		}
 		lrow := TableSourceLookupTablesElemRowsElem{}
 		// cols 1 .. n-2 are "keys" for the table
-		for _, col := range row.Values[:rowlen-2] {
+		for _, col := range row.Values[:rowLastIdx-1] {
 			lrow.Keys = append(lrow.Keys, col.FormattedValue)
 		}
 		// col n-1 is number value
-		lrow.Value = *parseDouble(row.Values[rowlen-1].FormattedValue)
-		lrow.Label = row.Values[rowlen].FormattedValue
+		lrow.Value = *parseDouble(row.Values[rowLastIdx-1].FormattedValue)
+		lrow.Label = row.Values[rowLastIdx].FormattedValue
 		l.Rows = append(l.Rows, lrow)
 	}
 	ret := TableSource{}
@@ -173,14 +176,15 @@ func getLookupTable(rows []*sheets.RowData) TableSource {
 	return ret
 }
 
-func deriveConfig(rows []*sheets.RowData) CostElementConfiguration {
+func buildConfig(rows []*sheets.RowData) CostElementConfiguration {
 	conf := CostElementConfiguration{}
 	conf.Name = rows[3].Values[1].FormattedValue
 	conf.Description = rows[4].Values[1].FormattedValue
 	conf.Category = CostElementConfigurationCategory(strings.ToUpper(rows[5].Values[1].FormattedValue))
-	conf.EffectiveStartDate = parseTime(rows[6].Values[1].FormattedValue)
-	conf.EffectiveEndDate = parseTime(rows[7].Values[1].FormattedValue)
-	conf.EffectiveStartDateSource = CostElementConfigurationEffectiveStartDateSourceCUSTOM
+	// just use fiscal year start date source, keep it simple:
+	// conf.EffectiveStartDate = parseTime(rows[6].Values[1].FormattedValue)
+	// conf.EffectiveEndDate = parseTime(rows[7].Values[1].FormattedValue)
+	conf.EffectiveStartDateSource = CostElementConfigurationEffectiveStartDateSourceFISCALYEARSTART
 	conf.ObjectCode = rows[8].Values[1].FormattedValue
 	conf.DefaultValue = parseDouble(rows[14].Values[1].FormattedValue)
 	switch rows[9].Values[1].FormattedValue {
@@ -195,7 +199,7 @@ func deriveConfig(rows []*sheets.RowData) CostElementConfiguration {
 			parseDouble(rows[12].Values[1].FormattedValue),
 			parseDouble(rows[11].Values[1].FormattedValue)}
 	}
-	conf.SourceDetails = getLookupTable(rows)
+	conf.SourceDetails = buildLookupTable(rows)
 	return conf
 }
 
@@ -214,10 +218,6 @@ func parseDouble(s string) *float64 {
 	return &z
 }
 
-func (e *parseError) Error() string {
-	return fmt.Sprintf(e.prob)
-}
-
 func handleSheet(s *sheets.Sheet) CostElementResult {
 	ceResult := CostElementResult{}
 	ceResult.sheetName = s.Properties.Title
@@ -233,7 +233,7 @@ func handleSheet(s *sheets.Sheet) CostElementResult {
 	}
 	// log.Printf("Building Cost Element : %s\n", rows[3].Values[1].FormattedValue)
 	// build a Configuration
-	conf := deriveConfig(rows)
+	conf := buildConfig(rows)
 	sourceDetails := CostElementSource("TABLE")
 	valueTypeDetails := CostElementValueType(strings.ToUpper(rows[9].Values[1].FormattedValue))
 	createdAt := CreatedAt(time.Now().Format(time.RFC3339))
@@ -349,8 +349,8 @@ func dumpCeResults(ceResults []CostElementResult) {
 		if ceResult.errors == nil {
 			fmt.Printf(" is valid")
 		} else {
+			fmt.Printf(" is invalid")
 			for _, err := range ceResult.errors {
-				fmt.Printf(" is invalid")
 				fmt.Printf("\n\t %v", err)
 			}
 		}
