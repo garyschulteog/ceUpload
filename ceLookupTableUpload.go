@@ -44,6 +44,8 @@ type CostElementResponse struct {
 	err  error
 }
 
+var keycloak string = "https://auth.integration.opengov.zone/auth/realms/opengov/protocol/openid-connect/token"
+var ceEndpoint string = "https://controlpanel.%s/api/wf_dataset_service/v1/cost_elements"
 var schemaLoader = gojsonschema.NewReferenceLoader("file://./cost-element.json")
 
 // Retrieve a token, saves the token, then returns the generated client.
@@ -71,8 +73,6 @@ func getClient() *http.Client {
 	}
 	return config.Client(context.Background(), tok)
 }
-
-var keycloak string = "https://auth.production.opengov.zone/auth/realms/opengov/protocol/openid-connect/token"
 
 func getKeycloakToken(creds keycloakCreds) (oauth2.Token, error) {
 	var err error
@@ -302,14 +302,17 @@ func sendCostElement(ceResult CostElementResult, token oauth2.Token) CostElement
 	body, _ := json.Marshal(ceResult.costElement)
 	req, err := http.NewRequest(
 		http.MethodPost,
-		// fmt.Sprintf("https://controlpanel.%s/api/wf_dataset_service/v1/cost_elements", ceResult.env),
-		"http://localhost:9301/api/wf_dataset_service/v1/cost_elements"
+		// fmt.Sprintf(ceEndpoint, ceResult.env),
+		"http://localhost:9301/api/wf_dataset_service/v1/cost_elements",
 		bytes.NewBuffer(body))
 
 	if err == nil {
-		req.URL.Query().Add("workforceId", ceResult.workforceId)
-		req.URL.Query().Add("actor", "00000000-0000-0000-0000-000000000000")
+		q := req.URL.Query()
+		q.Add("workforceId", ceResult.workforceId)
+		q.Add("actor", "00000000-0000-0000-0000-000000000000")
+		req.URL.RawQuery = q.Encode()
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
 		resp, reqerr := cli.Do(req)
 		if resp.StatusCode > 200 {
@@ -395,6 +398,7 @@ func main() {
 		if err != nil {
 			panic(err.Error())
 		}
-		dumpCeResponses(sendCostElements(ceResults, tk))
+		ceResps := sendCostElements(ceResults, tk)
+		dumpCeResponses(ceResps)
 	}
 }
