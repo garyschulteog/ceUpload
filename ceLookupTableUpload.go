@@ -455,7 +455,16 @@ func main() {
 				dumpCeResult(-1, ceResults[i])
 			}
 		case "X":
-			fmt.Println("not yet implemented")
+			i, err := strconv.ParseInt(obj, 10, 0)
+			if err == nil && int(i) < len(ceResults) {
+				var newCeResults []CostElementResult
+				for idx, ceResult := range ceResults {
+					if idx != int(i) {
+						newCeResults = append(newCeResults, ceResult)
+					}
+				}
+				ceResults = newCeResults
+			}
 		case "D":
 			i, err := strconv.ParseInt(obj, 10, 0)
 			if err == nil && int(i) < len(ceResults) {
