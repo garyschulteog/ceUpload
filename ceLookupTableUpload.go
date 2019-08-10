@@ -167,7 +167,7 @@ func buildLookupTable(rows []*sheets.RowData) TableSource {
 			lrow.Keys = append(lrow.Keys, col.FormattedValue)
 		}
 		// col n-1 is number value
-		lrow.Value = *parseDouble(row.Values[rowLastIdx-1].FormattedValue)
+		lrow.Value = row.Values[rowLastIdx-1].EffectiveValue.NumberValue
 		lrow.Label = row.Values[rowLastIdx].FormattedValue
 		l.Rows = append(l.Rows, lrow)
 	}
@@ -233,7 +233,6 @@ func handleSheet(s *sheets.Sheet) CostElementResult {
 		ceResult.errors = []error{&parseError{
 			fmt.Sprintf("'%s' does not match target env '%s'",
 				rows[2].Values[1].FormattedValue, targetEnv)}}
-		return ceResult
 	}
 	// log.Printf("Building Cost Element : %s\n", rows[3].Values[1].FormattedValue)
 	// build a Configuration
@@ -259,12 +258,10 @@ func validateCostElementResult(ceResult *CostElementResult) {
 		panic(err.Error())
 	}
 
-	var errors []error
 	for _, err := range result.Errors() {
-		errors = append(errors, error(&parseError{err.String()}))
+		ceResult.errors = append(ceResult.errors, error(&parseError{err.String()}))
 		fmt.Printf(string(json))
 	}
-	ceResult.errors = errors
 }
 
 func loadFromSheets(client *http.Client, spreadsheetId string) []CostElementResult {
@@ -462,7 +459,7 @@ func main() {
 		case "D":
 			i, err := strconv.ParseInt(obj, 10, 0)
 			if err == nil && int(i) < len(ceResults) {
-				body, err := json.Marshal(ceResults[i].costElement)
+				body, err := json.MarshalIndent(ceResults[i].costElement, "", "\t")
 				if err == nil {
 					fmt.Printf(string(body))
 				}
