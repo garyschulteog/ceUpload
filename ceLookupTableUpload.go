@@ -349,18 +349,24 @@ func sendCostElements(ceResults []CostElementResult, token oauth2.Token) []CostE
 	return ceResps
 }
 
-func dumpCeResults(ceResults []CostElementResult) {
-	for idx, ceResult := range ceResults {
-		fmt.Printf("%2d. %s workforceId: %s\t%s", idx, ceResult.env, ceResult.workforceId, ceResult.sheetName)
-		if ceResult.errors == nil {
-			fmt.Printf(" is valid")
-		} else {
-			fmt.Printf(" is invalid")
+func dumpCeResult(idx int, ceResult CostElementResult) {
+	fmt.Printf("%2d. %s workforceId: %s\t%s", idx, ceResult.env, ceResult.workforceId, ceResult.sheetName)
+	if ceResult.errors == nil {
+		fmt.Printf(" is valid")
+	} else {
+		fmt.Printf(" is invalid")
+		if idx < 0 {
 			for _, err := range ceResult.errors {
 				fmt.Printf("\n\t %v", err)
 			}
 		}
-		fmt.Printf("\n")
+	}
+	fmt.Printf("\n")
+}
+
+func dumpCeResults(ceResults []CostElementResult) {
+	for idx, ceResult := range ceResults {
+		dumpCeResult(idx, ceResult)
 	}
 }
 
@@ -369,12 +375,12 @@ func dumpToken(tk oauth2.Token) {
 	fmt.Printf(string(tkstr))
 }
 
-func dumpCeResponses(ceResponses []CostElementResponse) {
+func dumpCeResponses(ceResults []CostElementResult, ceResponses []CostElementResponse) {
 	for idx, ceResp := range ceResponses {
 		if ceResp.err == nil {
-			fmt.Printf("%2d. succeess: %s\n", idx, ceResp.body)
+			fmt.Printf("%s succeess: %s\n", ceResults[idx].sheetName, ceResp.body)
 		} else {
-			fmt.Printf("%2d. failed: %v\n", idx, ceResp.err)
+			fmt.Printf("%2 failed: %v\n", ceResults[idx].sheetName, ceResp.err)
 		}
 	}
 }
@@ -401,10 +407,31 @@ func setEnv() {
 	}
 }
 
+func doIt(ceResults []CostElementResult) {
+	kcCreds, err := loadKeycloakCreds()
+	if err != nil {
+		panic(err.Error())
+	}
+	tk, err := getKeycloakToken(kcCreds)
+	if err != nil {
+		panic(err.Error())
+	}
+	ceResps := sendCostElements(ceResults, tk)
+	dumpCeResponses(ceResults, ceResps)
+}
+
+func menu(ceResults []CostElementResult) {
+	fmt.Printf("\n\n")
+	dumpCeResults(ceResults)
+	fmt.Println("\n(A)pply, (R)eload, (E)rrors<num>, (D)ump<num> e(X)clude<num> (Q)uit\n ->")
+}
+
 func main() {
 	var sheetId string
-	var proceed string
 	var ceResults []CostElementResult
+	input := ""
+	command := ""
+	obj := ""
 
 	client := getClient()
 	setEnv()
@@ -413,27 +440,40 @@ func main() {
 	fmt.Printf("https://docs.google.com/spreadsheets/d/13bAh82ug0zGIBkKJKlxIEa2SHFVceWvxVpuzF4Svfqk/edit#gid=0\n")
 	fmt.Printf("\n->  ")
 	fmt.Scan(&sheetId)
-	fmt.Println()
+	ceResults = loadFromSheets(client, sheetId)
 
-	for proceed = "RELOAD"; proceed == "RELOAD" || proceed == "R"; {
-		ceResults = loadFromSheets(client, sheetId)
-		dumpCeResults(ceResults)
-		fmt.Println("\n upload the valid cost elements? (Yes/Reload/No)")
-		fmt.Scan(&proceed)
-		proceed = strings.ToUpper(proceed)
-		fmt.Println()
-	}
-
-	if proceed == "YES" || proceed == "Y" {
-		kcCreds, err := loadKeycloakCreds()
-		if err != nil {
-			panic(err.Error())
+	for {
+		menu(ceResults)
+		fmt.Scan(&input)
+		command = strings.ToUpper(string(input[0]))
+		obj = string(input[1:])
+		fmt.Printf("%s %s\n\n", command, obj)
+		switch command {
+		case "R":
+			ceResults = loadFromSheets(client, sheetId)
+			dumpCeResults(ceResults)
+		case "E":
+			i, err := strconv.ParseInt(obj, 10, 8)
+			if err == nil && int(i) < len(ceResults) {
+				dumpCeResult(-1, ceResults[i])
+			}
+		case "X":
+			fmt.Println("not yet implemented")
+		case "D":
+			i, err := strconv.ParseInt(obj, 10, 0)
+			if err == nil && int(i) < len(ceResults) {
+				body, err := json.Marshal(ceResults[i].costElement)
+				if err == nil {
+					fmt.Printf(string(body))
+				}
+			}
+		case "A":
+			doIt(ceResults)
+			return
+		case "Q":
+			return
+		default:
+			fmt.Printf("command not recognized %s(%s)", command, obj)
 		}
-		tk, err := getKeycloakToken(kcCreds)
-		if err != nil {
-			panic(err.Error())
-		}
-		ceResps := sendCostElements(ceResults, tk)
-		dumpCeResponses(ceResps)
 	}
 }
