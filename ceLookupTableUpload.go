@@ -113,7 +113,7 @@ func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 		"authorization code: \n%v\n", authURL)
 
 	var authCode string
-	if _, err := fmt.Scan(&authCode); err != nil {
+	if _, err := fmt.Scanln(&authCode); err != nil {
 		log.Fatalf("Unable to read authorization code: %v", err)
 	}
 
@@ -156,7 +156,7 @@ func buildLookupTable(rows []*sheets.RowData) TableSource {
 		l.Columns = append(l.Columns, col.FormattedValue)
 	}
 	// lookup table elements should start on row 18:
-	for _, row := range rows[17:] {
+	for rnum, row := range rows[17:] {
 		if row.Values[0].FormattedValue == "" {
 			//skip empty lines
 			break
@@ -166,10 +166,18 @@ func buildLookupTable(rows []*sheets.RowData) TableSource {
 		for _, col := range row.Values[:rowLastIdx-1] {
 			lrow.Keys = append(lrow.Keys, col.FormattedValue)
 		}
-		// col n-1 is number value
-		lrow.Value = row.Values[rowLastIdx-1].EffectiveValue.NumberValue
+
+		// col n is label value
 		lrow.Label = row.Values[rowLastIdx].FormattedValue
-		l.Rows = append(l.Rows, lrow)
+
+		// col n-1 is number value
+		var colValue = row.Values[rowLastIdx-1]
+		if colValue.FormattedValue != "" && &colValue.EffectiveValue.NumberValue != nil {
+			lrow.Value = row.Values[rowLastIdx-1].EffectiveValue.NumberValue
+			l.Rows = append(l.Rows, lrow)
+		} else {
+			fmt.Printf("discarding row number %d due to invalid value '%s'\n", 17+rnum, colValue.FormattedValue)
+		}
 	}
 	ret := TableSource{}
 	ret.LookupTables = append(ret.LookupTables, l)
@@ -386,7 +394,7 @@ func setEnv() {
 	// do some sloppy env configurations
 	var tgt string
 	fmt.Printf("enter target environment (prod/INTEG)\n->  ")
-	fmt.Scan(&tgt)
+	fmt.Scanln(&tgt)
 	switch strings.ToUpper(tgt) {
 	case "PROD":
 		targetEnv = "opengov.com"
@@ -436,12 +444,12 @@ func main() {
 	fmt.Printf("enter the google sheet id you want to load, e.g. `13bAh82ug0zGIBkKJKlxIEa2SHFVceWvxVpuzF4Svfqk` in the example url below:\n")
 	fmt.Printf("https://docs.google.com/spreadsheets/d/13bAh82ug0zGIBkKJKlxIEa2SHFVceWvxVpuzF4Svfqk/edit#gid=0\n")
 	fmt.Printf("\n->  ")
-	fmt.Scan(&sheetId)
+	fmt.Scanln(&sheetId)
 	ceResults = loadFromSheets(client, sheetId)
 
 	for {
 		menu(ceResults)
-		fmt.Scan(&input)
+		fmt.Scanln(&input)
 		command = strings.ToUpper(string(input[0]))
 		obj = string(input[1:])
 		fmt.Printf("%s %s\n\n", command, obj)
