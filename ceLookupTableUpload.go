@@ -147,9 +147,18 @@ func saveToken(path string, token *oauth2.Token) {
 	json.NewEncoder(f).Encode(token)
 }
 
-func buildLookupTable(rows []*sheets.RowData) TableSource {
+func buildLookupTable(sheetName string, rows []*sheets.RowData) TableSource {
 	l := TableSourceLookupTablesElem{}
-	rowLastIdx := len(rows[16].Values) - 1
+	// get the index of the last non-empty column header
+	var rowLastIdx = 0
+	for i, col := range rows[16].Values {
+		if col.FormattedValue == "" {
+			rowLastIdx = i - 1
+			break
+		} else {
+			rowLastIdx = i
+		}
+	}
 
 	// lookup table column headers should be on row 17, (skip amount and label):
 	for _, col := range rows[16].Values[:rowLastIdx-1] {
@@ -176,7 +185,8 @@ func buildLookupTable(rows []*sheets.RowData) TableSource {
 			lrow.Value = row.Values[rowLastIdx-1].EffectiveValue.NumberValue
 			l.Rows = append(l.Rows, lrow)
 		} else {
-			fmt.Printf("discarding row number %d due to invalid value '%s'\n", 17+rnum, colValue.FormattedValue)
+			fmt.Printf("sheet name %s: discarding row number %d due to invalid value '%s' in column %q\n",
+				sheetName, 18+rnum, colValue.FormattedValue, rune('A'+rowLastIdx-1))
 		}
 	}
 	ret := TableSource{}
@@ -184,7 +194,7 @@ func buildLookupTable(rows []*sheets.RowData) TableSource {
 	return ret
 }
 
-func buildConfig(rows []*sheets.RowData) CostElementConfiguration {
+func buildConfig(sheetName string, rows []*sheets.RowData) CostElementConfiguration {
 	conf := CostElementConfiguration{}
 	conf.Name = rows[3].Values[1].FormattedValue
 	conf.Description = rows[4].Values[1].FormattedValue
@@ -207,7 +217,7 @@ func buildConfig(rows []*sheets.RowData) CostElementConfiguration {
 			parseDouble(rows[12].Values[1].FormattedValue),
 			parseDouble(rows[11].Values[1].FormattedValue)}
 	}
-	conf.SourceDetails = buildLookupTable(rows)
+	conf.SourceDetails = buildLookupTable(sheetName, rows)
 	return conf
 }
 
@@ -244,7 +254,7 @@ func handleSheet(s *sheets.Sheet) CostElementResult {
 	}
 	// log.Printf("Building Cost Element : %s\n", rows[3].Values[1].FormattedValue)
 	// build a Configuration
-	conf := buildConfig(rows)
+	conf := buildConfig(ceResult.sheetName, rows)
 	sourceDetails := CostElementSource("TABLE")
 	valueTypeDetails := CostElementValueType(parseCellString(rows[9].Values[1]))
 	createdAt := CreatedAt(time.Now().Format(time.RFC3339))
