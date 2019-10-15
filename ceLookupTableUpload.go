@@ -86,13 +86,15 @@ func getKeycloakToken(creds keycloakCreds) (oauth2.Token, error) {
 	cli := http.Client{
 		Timeout: time.Second * 2, // Maximum of 2 secs
 	}
+
 	body := []byte(fmt.Sprintf("grant_type=password&username=%s&password=%s", creds.User, creds.Password))
+	println("body: " + string(body))
 	req, err := http.NewRequest(http.MethodPost, keycloak, bytes.NewBuffer(body))
 	if err == nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Authorization", fmt.Sprintf("Basic %s",
-			base64.RawStdEncoding.EncodeToString([]byte(
-				fmt.Sprintf("%s:%s", creds.ClientId, creds.ClientSecret)))))
+			base64.StdEncoding.EncodeToString([]byte(
+				fmt.Sprintf("%s:%s", creds.ClientId, creds.ClientSecret)))))			
 		resp, reqerr := cli.Do(req)
 		if resp.StatusCode > 200 {
 			err = error(&parseError{"Failed to authorize: " + resp.Status})
