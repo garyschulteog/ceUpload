@@ -94,12 +94,12 @@ func getKeycloakToken(creds keycloakCreds) (oauth2.Token, error) {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Authorization", fmt.Sprintf("Basic %s",
 			base64.StdEncoding.EncodeToString([]byte(
-				fmt.Sprintf("%s:%s", creds.ClientId, creds.ClientSecret)))))			
+				fmt.Sprintf("%s:%s", creds.ClientId, creds.ClientSecret)))))
 		resp, reqerr := cli.Do(req)
-		if resp.StatusCode > 200 {
-			err = error(&parseError{"Failed to authorize: " + resp.Status})
-		} else {
+		if resp == nil || reqerr != nil {
 			err = reqerr
+		} else if resp.StatusCode > 200 {
+			err = error(&parseError{"Failed to authorize: " + resp.Status})
 		}
 		if err == nil {
 			err = json.NewDecoder(resp.Body).Decode(&tokenResp)
@@ -405,7 +405,7 @@ func dumpCeResponses(ceResults []CostElementResult, ceResponses []CostElementRes
 func setEnv() {
 	// do some sloppy env configurations
 	var tgt string
-	fmt.Printf("enter target environment (prod/INTEG)\n->  ")
+	fmt.Printf("enter target environment (prod/integ/loadtest/local)\n->  ")
 	fmt.Scanln(&tgt)
 	switch strings.ToUpper(tgt) {
 	case "PROD":
@@ -415,7 +415,10 @@ func setEnv() {
 	case "INTEG":
 		targetEnv = "ogintegration.us"
 		ceEndpoint = fmt.Sprintf(ceEndpoint, "https://controlpanel.ogintegration.us")
-		keycloak = fmt.Sprintf(keycloak, "integration")
+	case "LOADTEST":
+		targetEnv = "opengovdemo.com"
+		ceEndpoint = fmt.Sprintf(ceEndpoint, "https://controlpanel.opengovdemo.com")
+		keycloak = "https://auth.opengovdemo.com/auth/realms/opengov/protocol/openid-connect/token"
 	default:
 		fmt.Printf("using dev ogov.me\n\n")
 		targetEnv = "ogov.me"
